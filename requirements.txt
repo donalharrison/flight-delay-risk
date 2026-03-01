@@ -1,0 +1,17 @@
+# Core data stack
+pandas>=2.1
+numpy>=1.26
+pyarrow>=14.0
+
+# Modeling (v1)
+scikit-learn>=1.4
+catboost>=1.2
+
+# Explainability (later but harmless to include)
+shap>=0.44
+
+# App layer (you’ll use soon)
+streamlit>=1.31
+
+# Utilities
+python-dateutil>=2.8

@@ -1,0 +1,58 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python version
+.python-version
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Mypy / type checkers
+.mypy_cache/
+.pyright/
+
+# Ruff
+.ruff_cache/
+
+# Data directories
+data/raw/
+data/interim/
+data/features/
+
+# Model artifacts
+models/artifacts/
+
+# Parquet & large files
+*.parquet
+*.feather
+*.joblib
+*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+*.swp
