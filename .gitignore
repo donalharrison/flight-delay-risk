@@ -27,7 +27,7 @@ htmlcov/
 .ruff_cache/
 
 # Data directories
-data/raw/
+# data/raw/
 data/interim/
 data/features/
 
