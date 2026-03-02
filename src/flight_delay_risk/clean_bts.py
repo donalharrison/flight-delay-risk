@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from importlib.resources import path
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +19,7 @@ REQUIRED_COLUMNS = [
     "MONTH",
     "DAY_OF_MONTH",
     "DAY_OF_WEEK",
-    "OP_UNIQUE_CARRIER",
+    "OP_CARRIER",
     "ORIGIN",
     "DEST",
     "CRS_DEP_TIME",
@@ -43,7 +44,7 @@ DTYPES = {
     "MONTH": "Int8",
     "DAY_OF_MONTH": "Int8",
     "DAY_OF_WEEK": "Int8",
-    "OP_UNIQUE_CARRIER": "string",
+    "OP_CARRIER": "string",
     "ORIGIN": "string",
     "DEST": "string",
     "CRS_DEP_TIME": "Int32",
@@ -79,6 +80,16 @@ def find_csv_files(raw_root: Path) -> list[Path]:
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Normalize header naming and strip whitespace
     df.columns = [c.strip().upper() for c in df.columns]
+    return df
+
+def normalize_alias_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Standardize column naming across BTS extracts.
+    We use OP_CARRIER as the canonical operating carrier column.
+    """
+    # Common variant in some downloads
+    if "OP_CARRIER" not in df.columns and "OP_UNIQUE_CARRIER" in df.columns:
+        df = df.rename(columns={"OP_UNIQUE_CARRIER": "OP_CARRIER"})
     return df
 
 
@@ -173,6 +184,7 @@ def read_one_csv(path: Path, usecols: list[str] | None, chunksize: int | None) -
         df = pd.read_csv(path, usecols=usecols, low_memory=False)
 
     df = normalize_columns(df)
+    df = normalize_alias_columns(df)
     df = ensure_columns(df, path)
     df = coerce_types(df)
 
@@ -189,6 +201,7 @@ def write_partitioned_parquet(df: pd.DataFrame, out_dir: Path) -> None:
         index=False,
         engine="pyarrow",
         partition_cols=["YEAR", "MONTH"],
+        use_dictionary=False,
     )
 
 
