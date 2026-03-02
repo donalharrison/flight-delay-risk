@@ -9,9 +9,11 @@ catboost>=1.2
 
 # Explainability (later but harmless to include)
 shap>=0.44
+openai>=1.0
 
 # App layer (you’ll use soon)
 streamlit>=1.31
 
 # Utilities
 python-dateutil>=2.8
+joblib
