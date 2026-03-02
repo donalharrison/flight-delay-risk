@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 import os
-import httpx
-import certifi
-
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
 
+import certifi
+import httpx
 from openai import OpenAI
 
 
@@ -29,13 +28,14 @@ def build_evidence(
     """
     Build a strictly grounded evidence object for the LLM.
 
-    flight_inputs: user-entered + derived flight fields (carrier/origin/dest/date/time, etc.)
+    flight_inputs: user-entered + derived flight fields
     prediction: output from predict_one() (probability, risk_bucket, ...)
     shap_out: output from shap_explain_one() (top_positive, top_negative, base_value, ...)
-    fs_meta: optional info about feature store (e.g., max_date used for lookup)
+    fs_meta: optional info about feature store (e.g., lookup_date used)
     """
+
     def _driver_rows(rows: List[Tuple[str, Any, float]], direction: str) -> List[Dict[str, Any]]:
-        out = []
+        out: List[Dict[str, Any]] = []
         for feat, val, shap_v in rows:
             out.append(
                 {
@@ -47,7 +47,6 @@ def build_evidence(
                     "abs_shap": float(abs(shap_v)),
                 }
             )
-        # already sorted in your shap_out; keep stable
         return out
 
     evidence = {
@@ -58,7 +57,6 @@ def build_evidence(
             "risk_bucket": str(prediction.get("risk_bucket", "unknown")),
         },
         "flight": {
-            # keep it small and user-facing
             "flight_date": _jsonable(flight_inputs.get("flight_date")),
             "carrier": flight_inputs.get("OP_CARRIER"),
             "origin": flight_inputs.get("ORIGIN"),
@@ -72,7 +70,6 @@ def build_evidence(
             "risk_up": _driver_rows(shap_out.get("top_positive", []), "up"),
             "risk_down": _driver_rows(shap_out.get("top_negative", []), "down"),
         },
-        # Helpful for future debugging / eval, not shown to user necessarily
         "shap": {
             "base_value": float(shap_out.get("base_value", 0.0)),
         },
@@ -83,7 +80,7 @@ def build_evidence(
 def render_deterministic_bullets(evidence: Dict[str, Any], *, max_bullets: int = 6) -> List[str]:
     """
     Deterministic bullets the LLM should paraphrase.
-    These should be strictly derived from evidence (no extra facts).
+    These are strictly derived from evidence (no extra facts).
     """
     p = evidence["prediction"]["probability"]
     bucket = evidence["prediction"]["risk_bucket"]
@@ -93,16 +90,13 @@ def render_deterministic_bullets(evidence: Dict[str, Any], *, max_bullets: int =
     bullets: List[str] = []
     bullets.append(f"Predicted delay risk is {p:.1%} (bucket: {bucket}).")
     bullets.append(
-        f"Flight inputs: {flight.get('carrier')} {flight.get('origin')}→{flight.get('dest')} on {flight.get('flight_date')} "
-        f"departing around hour {flight.get('scheduled_departure_hour')}."
+        f"Flight inputs: {flight.get('carrier')} {flight.get('origin')}→{flight.get('dest')} "
+        f"on {flight.get('flight_date')} departing around hour {flight.get('scheduled_departure_hour')}."
     )
 
-    if lookup:
-        # Example: show which date we used for aggregates
-        if "lookup_date" in lookup and lookup["lookup_date"] is not None:
-            bullets.append(f"Historical aggregates were looked up using date: {lookup['lookup_date']}.")
+    if "lookup_date" in lookup and lookup["lookup_date"]:
+        bullets.append(f"Historical aggregates were looked up using date: {lookup['lookup_date']}.")
 
-    # Include top SHAP drivers with feature labels + values
     up = evidence["drivers"]["risk_up"][:3]
     down = evidence["drivers"]["risk_down"][:2]
 
@@ -122,22 +116,29 @@ def llm_explain(
 ) -> str:
     """
     Calls OpenAI Responses API to generate a grounded explanation.
-    If OPENAI_API_KEY is not set, returns a safe fallback explanation.
+
+    Behavior:
+    - If OPENAI_API_KEY is missing -> fallback explaining missing key
+    - If network/SSL/proxy blocks -> fallback explaining connection/SSL error
+    - Any other error -> fallback explaining general failure
     """
     if config is None:
         config = LLMConfig()
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        # Safe offline fallback: no hallucinations, purely derived from bullets
-        return _fallback_explanation(bullets)
+        return _fallback_explanation(
+            bullets,
+            reason="OPENAI_API_KEY is not set in the environment.",
+        )
 
-    # Force TLS verification using certifi's CA bundle
-    http_client = httpx.Client(verify=certifi.where(), timeout=30.0)
+    # Prefer an explicit CA bundle if user configured one (helps with corp proxies)
+    verify_path = os.environ.get("SSL_CERT_FILE") or certifi.where()
 
+    # Create a short-lived client so we don't leak sockets across Streamlit reruns
+    http_client = httpx.Client(verify=verify_path, timeout=30.0)
     client = OpenAI(api_key=api_key, http_client=http_client)
 
-    # System instruction: constrain to evidence + bullets only
     system = (
         "You are a product explanation assistant for a flight delay risk app.\n"
         "You MUST only use the provided evidence JSON and deterministic bullets.\n"
@@ -151,33 +152,64 @@ def llm_explain(
         "Keep it concise.\n"
     )
 
-    user_payload = {
-        "deterministic_bullets": bullets,
-        "evidence": evidence,
-    }
+    user_payload = {"deterministic_bullets": bullets, "evidence": evidence}
 
-    # Use Responses API (recommended for new projects)
-    resp = client.responses.create(
-        model=config.model,
-        input=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-        ],
-        max_output_tokens=config.max_output_tokens,
-        temperature=config.temperature,
-    )
+    try:
+        resp = client.responses.create(
+            model=config.model,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+            ],
+            max_output_tokens=config.max_output_tokens,
+            temperature=config.temperature,
+        )
+        return resp.output_text.strip()
 
-    # output_text is provided by the SDK
-    return resp.output_text.strip()
+    except httpx.ConnectError as e:
+        # Common for corporate proxies / SSL interception
+        msg = str(e)
+        if "CERTIFICATE_VERIFY_FAILED" in msg or "certificate verify failed" in msg.lower():
+            return _fallback_explanation(
+                bullets,
+                reason="Could not establish a verified TLS connection to the OpenAI API (SSL certificate verification failed). "
+                       "This is commonly caused by corporate VPN/proxy SSL interception (e.g., Zscaler) without the proxy CA installed in Python's trust store.",
+                error=e,
+            )
+        return _fallback_explanation(
+            bullets,
+            reason="Could not connect to the OpenAI API (network connection error).",
+            error=e,
+        )
+
+    except httpx.TimeoutException as e:
+        return _fallback_explanation(
+            bullets,
+            reason="OpenAI API request timed out.",
+            error=e,
+        )
+
+    except Exception as e:
+        # Catch-all: keep app alive and show a useful hint
+        return _fallback_explanation(
+            bullets,
+            reason="LLM explanation failed due to an unexpected error.",
+            error=e,
+        )
+
+    finally:
+        try:
+            http_client.close()
+        except Exception:
+            pass
 
 
 # -----------------------
 # Helpers
 # -----------------------
 def _jsonable(x: Any) -> Any:
-    # pandas timestamps / numpy scalars -> python scalars / strings
     try:
-        import pandas as pd  # local import to avoid hard dependency issues
+        import pandas as pd
         if isinstance(x, pd.Timestamp):
             return x.isoformat()
     except Exception:
@@ -190,19 +222,36 @@ def _jsonable(x: Any) -> Any:
     except Exception:
         pass
 
-    # pd.NA -> None
     if str(x) == "<NA>":
         return None
 
     return x
 
 
-def _fallback_explanation(bullets: List[str]) -> str:
-    # Deterministic, safe fallback
-    lines = []
-    lines.append("LLM explanation is unavailable (OPENAI_API_KEY not set).")
+def _fallback_explanation(
+    bullets: List[str],
+    *,
+    reason: str,
+    error: Optional[BaseException] = None,
+) -> str:
+    """
+    Deterministic, safe fallback with accurate error reporting.
+    """
+    lines: List[str] = []
+    lines.append("LLM explanation is unavailable right now.")
+    lines.append(f"Reason: {reason}")
+
+    if error is not None:
+        # Show a short, non-noisy diagnostic. Avoid huge tracebacks in UI.
+        lines.append(f"Error type: {type(error).__name__}")
+        msg = str(error).strip()
+        if msg:
+            # keep it short
+            lines.append(f"Error message: {msg[:300]}")
+
     lines.append("")
     lines.append("Here is the grounded evidence we have:")
     for b in bullets:
         lines.append(f"- {b}")
+
     return "\n".join(lines)
