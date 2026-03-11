@@ -44,7 +44,7 @@ def build_index_maps(df: pd.DataFrame, agg_cols: list[str]):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--store", type=str, default="data/feature_store/with_aggs_store_slim.parquet")
+    parser.add_argument("--store", type=str, default="data/feature_store/with_aggs_store.parquet")
     parser.add_argument("--out", type=str, default="data/feature_store/with_aggs_index.joblib")
     args = parser.parse_args()
 
