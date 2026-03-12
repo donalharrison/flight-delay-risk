@@ -1,0 +1,120 @@
+{
+  "data_full": {
+    "train_rows_loaded": null
+  },
+  "data_sampled": {
+    "train_rows": 358295,
+    "val_rows": 177889,
+    "test_rows": 146699,
+    "train_delay_rate": 0.2234694874335394,
+    "val_delay_rate": 0.22883933239267185,
+    "test_delay_rate": 0.2434099755281222
+  },
+  "features": {
+    "feature_cols": [
+      "DAY_OF_WEEK",
+      "is_weekend",
+      "week_of_year",
+      "day_of_month",
+      "OP_CARRIER",
+      "ORIGIN",
+      "DEST",
+      "route",
+      "dep_daypart",
+      "DISTANCE",
+      "CRS_DEP_MINUTES",
+      "CRS_ARR_MINUTES",
+      "CRS_DEP_HOUR",
+      "CRS_ARR_HOUR",
+      "origin_freq_30d",
+      "origin_delay_rate_30d",
+      "origin_freq_90d",
+      "origin_delay_rate_90d",
+      "origin_freq_365d",
+      "origin_delay_rate_365d",
+      "dest_freq_30d",
+      "dest_delay_rate_30d",
+      "dest_freq_90d",
+      "dest_delay_rate_90d",
+      "dest_freq_365d",
+      "dest_delay_rate_365d",
+      "carrier_freq_30d",
+      "carrier_delay_rate_30d",
+      "carrier_freq_90d",
+      "carrier_delay_rate_90d",
+      "carrier_freq_365d",
+      "carrier_delay_rate_365d",
+      "route_freq_30d",
+      "route_delay_rate_30d",
+      "route_freq_90d",
+      "route_delay_rate_90d",
+      "route_freq_365d",
+      "route_delay_rate_365d",
+      "carrier_origin_freq_30d",
+      "carrier_origin_delay_rate_30d",
+      "carrier_origin_freq_90d",
+      "carrier_origin_delay_rate_90d",
+      "carrier_origin_freq_365d",
+      "carrier_origin_delay_rate_365d",
+      "origin_dep_hour_freq_30d",
+      "origin_dep_hour_delay_rate_30d",
+      "origin_dep_hour_freq_90d",
+      "origin_dep_hour_delay_rate_90d",
+      "origin_dep_hour_freq_365d",
+      "origin_dep_hour_delay_rate_365d"
+    ],
+    "cat_cols": [
+      "OP_CARRIER",
+      "ORIGIN",
+      "DEST",
+      "route",
+      "dep_daypart"
+    ]
+  },
+  "training": {
+    "model_name": "catboost_delayrisk_reduced_v1.cbm",
+    "features_root": "data\\features\\with_aggs_reduced",
+    "random_seed": 42,
+    "iterations": 1500,
+    "learning_rate": 0.05,
+    "depth": 6,
+    "l2_leaf_reg": 3.0,
+    "train_max_rows": 2000000,
+    "val_max_rows": 500000,
+    "test_max_rows": 500000
+  },
+  "metrics": {
+    "val": {
+      "roc_auc": 0.665566137074197,
+      "pr_auc": 0.3704526400264939,
+      "brier": 0.23903763480971768,
+      "threshold": 0.5,
+      "confusion_matrix": [
+        [
+          78204,
+          58977
+        ],
+        [
+          13539,
+          27169
+        ]
+      ]
+    },
+    "test": {
+      "roc_auc": 0.6821700728886717,
+      "pr_auc": 0.4140311820801972,
+      "brier": 0.21057962253878648,
+      "threshold": 0.5,
+      "confusion_matrix": [
+        [
+          78700,
+          32291
+        ],
+        [
+          16084,
+          19624
+        ]
+      ]
+    }
+  }
+}

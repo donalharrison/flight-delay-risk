@@ -44,25 +44,26 @@ def main() -> None:
 
     df_all = pd.concat(frames, ignore_index=True)
 
-    # Ensure date
+    if "flight_date" not in df_all.columns:
+        raise ValueError("Expected 'flight_date' in input feature datasets.")
+
     df_all["flight_date"] = pd.to_datetime(df_all["flight_date"], errors="coerce")
     df_all = df_all.dropna(subset=["flight_date"]).copy()
 
-    # Keep only what we need for lookups
     agg_cols = [c for c in df_all.columns if ("_delay_rate_" in c or "_freq_" in c)]
     key_cols = ["flight_date", "ORIGIN", "DEST", "OP_CARRIER", "route", "CRS_DEP_HOUR"]
     keep = [c for c in key_cols if c in df_all.columns] + agg_cols
 
     store = df_all[keep].copy()
 
-    # Normalize strings (safer joins)
+    # Normalize key columns for safer downstream lookups
     for c in ["ORIGIN", "DEST", "OP_CARRIER", "route"]:
         if c in store.columns:
             store[c] = store[c].astype("string").fillna("__MISSING__").str.strip()
 
-    store["CRS_DEP_HOUR"] = pd.to_numeric(store["CRS_DEP_HOUR"], errors="coerce").fillna(-1).astype("int16")
+    if "CRS_DEP_HOUR" in store.columns:
+        store["CRS_DEP_HOUR"] = pd.to_numeric(store["CRS_DEP_HOUR"], errors="coerce").fillna(-1).astype("int16")
 
-    # Write single parquet file for simple loading
     store.to_parquet(out_path, index=False, engine="pyarrow", use_dictionary=False)
 
     print("Wrote feature store:", out_path)

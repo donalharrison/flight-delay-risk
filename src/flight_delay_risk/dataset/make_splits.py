@@ -13,14 +13,11 @@ class SplitConfig:
     val_end: str    # inclusive
     test_end: str   # inclusive
 
+
 def load_parquet_dataset_resilient(parquet_dir: Path, columns: list[str] | None = None) -> pd.DataFrame:
     """
     Read a partitioned parquet directory in a way that's resilient to pyarrow dictionary encoding
-    issues across environments (e.g., some pandas/pyarrow combos on py313).
-
-    - Reads with pyarrow.dataset
-    - Decodes dictionary-encoded columns
-    - Converts to pandas
+    issues across environments.
     """
     import pyarrow as pa
     import pyarrow.compute as pc
@@ -29,17 +26,15 @@ def load_parquet_dataset_resilient(parquet_dir: Path, columns: list[str] | None 
     dataset = ds.dataset(parquet_dir, format="parquet")
     table = dataset.to_table(columns=columns)
 
-    # Decode any dictionary-encoded columns (fixes pandas NotImplementedError)
     for i, field in enumerate(table.schema):
         if pa.types.is_dictionary(field.type):
             table = table.set_column(i, field.name, pc.dictionary_decode(table.column(i)))
 
     return table.to_pandas()
 
+
 def load_labeled(parquet_dir: Path) -> pd.DataFrame:
-    # Only read what we need for splitting + writing partitions
-    cols = ["flight_date", "YEAR", "MONTH"]
-    df = load_parquet_dataset_resilient(parquet_dir, columns=None)  # set cols if you want, see note below
+    df = load_parquet_dataset_resilient(parquet_dir, columns=None)
 
     if "flight_date" not in df.columns:
         raise ValueError("Expected 'flight_date' in labeled dataset. Run build_labels.py first.")
@@ -48,10 +43,16 @@ def load_labeled(parquet_dir: Path) -> pd.DataFrame:
     if df["flight_date"].isna().any():
         raise ValueError("Some flight_date values are NaT; cannot split.")
 
-    # Guardrail: ensure YEAR/MONTH exist for partitioning output
-    if "YEAR" not in df.columns or "MONTH" not in df.columns:
+    # Derive YEAR/MONTH if partition columns are not materialized
+    if "YEAR" not in df.columns:
         df["YEAR"] = df["flight_date"].dt.year.astype("Int16")
+    else:
+        df["YEAR"] = pd.to_numeric(df["YEAR"], errors="coerce").astype("Int16")
+
+    if "MONTH" not in df.columns:
         df["MONTH"] = df["flight_date"].dt.month.astype("Int8")
+    else:
+        df["MONTH"] = pd.to_numeric(df["MONTH"], errors="coerce").astype("Int8")
 
     return df
 
@@ -81,19 +82,23 @@ def split_by_date(df: pd.DataFrame, cfg: SplitConfig) -> tuple[pd.DataFrame, pd.
 
 def write_split(df: pd.DataFrame, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Keep partitioning by YEAR/MONTH for fast reads later
-    df.to_parquet(out_dir, index=False, engine="pyarrow", partition_cols=["YEAR", "MONTH"])
+    df.to_parquet(
+        out_dir,
+        index=False,
+        engine="pyarrow",
+        partition_cols=["YEAR", "MONTH"],
+        use_dictionary=False,
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create time-based train/val/test splits for BTS labeled dataset.")
-    parser.add_argument("--in-dir", type=str, default="data/interim/bts_on_time_labeled")
-    parser.add_argument("--out-root", type=str, default="data/interim/splits")
+    parser.add_argument("--in-dir", type=str, default="data/interim/bts_on_time_labeled_reduced")
+    parser.add_argument("--out-root", type=str, default="data/interim/splits_reduced")
 
-    # You can set these based on what you downloaded. Defaults assume you have at least 2023–2024.
-    parser.add_argument("--train-end", type=str, default="2023-12-31")
-    parser.add_argument("--val-end", type=str, default="2024-06-30")
-    parser.add_argument("--test-end", type=str, default="2024-12-31")
+    parser.add_argument("--train-end", type=str, default="2024-12-31")
+    parser.add_argument("--val-end", type=str, default="2025-06-30")
+    parser.add_argument("--test-end", type=str, default="2025-11-30")
 
     args = parser.parse_args()
 

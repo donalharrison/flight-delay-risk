@@ -29,7 +29,7 @@ def load_artifacts(artifacts_dir: Path) -> ModelArtifacts:
 
     # Load model
     model = CatBoostClassifier()
-    model.load_model(str(artifacts_dir / "catboost_delayrisk_v1.cbm"))
+    model.load_model(str(artifacts_dir / "catboost_delayrisk_reduced_v1.cbm"))
 
     return ModelArtifacts(model=model, feature_cols=feature_cols, cat_cols=cat_cols)
 
